@@ -2,8 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:merchbd/login.dart'; // Make sure this is imported
 import 'package:merchbd/screens/home.dart';
+import 'package:merchbd/utils/auth_guard.dart';
 import 'package:merchbd/utils/auth_service.dart';
-import 'package:merchbd/utils/auth_guard.dart'; // Import your guard
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -30,17 +30,14 @@ class _SplashScreenState extends State<SplashScreen> {
     // Handle navigation after 3 seconds
     Timer(const Duration(seconds: 3), () async {
       if (!mounted) return;
-
-      // Check the global login status
       bool isLoggedIn = await AuthService.isLoggedIn();
-
       if (isLoggedIn) {
-        // Go to Home (wrapped in Guard)
+        // If logged in, go to Home wrapped in Guard
         Navigator.of(context).pushReplacement(MaterialPageRoute(
           builder: (_) => const AuthGuard(child: HomeScreen()),
         ));
       } else {
-        // Go to Login
+        // Otherwise, go straight to Login
         Navigator.of(context).pushReplacement(MaterialPageRoute(
           builder: (_) => const LoginPage(),
         ));

@@ -23,13 +23,14 @@ class _AuthGuardState extends State<AuthGuard> {
     bool status = await AuthService.isLoggedIn();
     if (!status) {
       if (!mounted) return;
+      // Clear everything and force login
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const LoginPage()),
             (route) => false,
       );
     } else {
-      setState(() => _isAuthorized = true);
+      if (mounted) setState(() => _isAuthorized = true);
     }
   }
 
