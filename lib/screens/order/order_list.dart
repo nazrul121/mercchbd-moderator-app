@@ -14,17 +14,9 @@ class _OrderListState extends State<OrderList> {
 
   @override
   Widget build(BuildContext context) {
-    bool _isLoggedIn = false;
-
     return Scaffold(
-      appBar: buildCustomAppBar(context, 'orders', _isLoggedIn),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            OrderQuery()
-          ],
-        ),
-      ),
+      appBar: buildCustomAppBar(context, 'orders'),
+      body: OrderQuery(),
       bottomNavigationBar: Footer(),
     );
   }

@@ -288,13 +288,13 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                       ),
                     ),
                   ),
-                ),
-                const Footer(),
+                )
               ],
             ),
           ],
         ),
       ),
+      bottomNavigationBar: const Footer()
     );
   }
 }

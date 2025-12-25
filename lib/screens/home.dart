@@ -45,49 +45,52 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return AuthGuard(
       child: Scaffold(
+        resizeToAvoidBottomInset: true,
         backgroundColor: Colors.grey[100], // Light grey background for premium contrast
-        appBar: buildCustomAppBar(context, 'Dashboard', true),
-        body: SingleChildScrollView(
-          child: Column(
-            children: [
-              _buildProfileHeader(),
+        appBar: buildCustomAppBar(context, 'Dashboard'),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                _buildProfileHeader(),
 
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Quick Actions",
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
-                    ),
-                    const SizedBox(height: 15),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Quick Actions",
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+                      ),
+                      const SizedBox(height: 15),
 
-                    // Grid of Premium Buttons
-                    GridView.count(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 15,
-                      mainAxisSpacing: 15,
-                      childAspectRatio: 1.3,
-                      children: [
-                        _buildMenuCard(Icons.add_shopping_cart, "Create Order", Colors.orange, '/create-order'),
-                        _buildMenuCard(Icons.list_alt, "My Ref Orders", Colors.blue, '/ref-orders'),
-                        _buildMenuCard(Icons.track_changes, "My Targets", Colors.purple, '/targets'),
-                        _buildMenuCard(Icons.payments_outlined, "My Payments", Colors.green, '/payments'),
-                        _buildMenuCard(Icons.account_circle_outlined, "Profile", Colors.teal, '/profile'),
-                        _buildMenuCard(Icons.logout, "Logout", Colors.red, ''),
-                      ],
-                    ),
-                  ],
+                      // Grid of Premium Buttons
+                      GridView.count(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 15,
+                        mainAxisSpacing: 15,
+                        childAspectRatio: 1.3,
+                        children: [
+                          _buildMenuCard(Icons.add_shopping_cart, "Create Order", Colors.orange, '/create-order'),
+                          _buildMenuCard(Icons.list_alt, "My Ref Orders", Colors.blue, '/ref-orders'),
+                          _buildMenuCard(Icons.track_changes, "My Targets", Colors.purple, '/targets'),
+                          _buildMenuCard(Icons.payments_outlined, "My Payments", Colors.green, '/payments'),
+                          _buildMenuCard(Icons.account_circle_outlined, "Profile", Colors.teal, '/profile'),
+                          _buildMenuCard(Icons.logout, "Logout", Colors.red, ''),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
 
-              const Divider(height: 40),
-              const TodayOrderList(),
-              const SizedBox(height: 100), // Extra space for footer
-            ],
+                const Divider(height: 40),
+                const TodayOrderList(),
+                const SizedBox(height: 100), // Extra space for footer
+              ],
+            ),
           ),
         ),
         bottomNavigationBar: const Footer(),

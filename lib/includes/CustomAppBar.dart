@@ -8,7 +8,7 @@ import 'package:merchbd/screens/profile.dart';
 import 'package:merchbd/screens/targets.dart';
 import 'package:merchbd/utils/auth_service.dart';
 
-PreferredSizeWidget buildCustomAppBar(BuildContext context, String title, bool isLoggedIn) {
+PreferredSizeWidget buildCustomAppBar(BuildContext context, String title) {
 
   // Logic to handle logout
   Future<void> _handleLogout() async {
@@ -156,7 +156,7 @@ PreferredSizeWidget buildCustomAppBar(BuildContext context, String title, bool i
           const PopupMenuDivider(height: 1),
 
           // Conditional Menu Item based on auth status
-          isLoggedIn ? const PopupMenuItem<String>(
+          const PopupMenuItem<String>(
             value: 'logout', height: 40,
             child: Row(
               children: [
@@ -166,16 +166,6 @@ PreferredSizeWidget buildCustomAppBar(BuildContext context, String title, bool i
               ],
             ),
           )
-          : const PopupMenuItem<String>(
-            value: 'login',  height: 40,
-            child: Row(
-              children: [
-                Icon(Icons.login_rounded, size: 18, color: Colors.blue),
-                SizedBox(width: 8),
-                Text('Login', style: TextStyle(color: Colors.blue)),
-              ],
-            ),
-          ),
         ],
       ),
     ],
