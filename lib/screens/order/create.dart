@@ -1,9 +1,16 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:merchbd/includes/CustomAppBar.dart';
+import 'package:merchbd/includes/SnackBar.dart';
 import 'package:merchbd/screens/order/billing_shipping.dart';
 import 'package:merchbd/screens/order/order_list.dart';
 import 'package:merchbd/screens/order/searachProduct.dart';
 import 'package:merchbd/utils/auth_guard.dart';
+import 'package:shared_preferences/shared_preferences.dart' show SharedPreferences;
+
+import 'FinalOrderDetails.dart';
 
 class CreateOrder extends StatefulWidget {
   const CreateOrder({super.key});
@@ -12,32 +19,30 @@ class CreateOrder extends StatefulWidget {
   State<CreateOrder> createState() => _CreateOrderState();
 }
 
-
 class _CreateOrderState extends State<CreateOrder> {
   final PageController _pageController = PageController();
   int _currentStep = 0;
 
-  // Form Controllers
   final GlobalKey<AddressFormState> addressKey = GlobalKey<AddressFormState>();
 
-// Use it in your UI
-  AddressForm(key: addressKey),
-
-// Access data later
-  void printData() {
-  print(addressKey.currentState?.deliveryCost);
-  }
-
-
   final _discountController = TextEditingController();
-  String _orderSource = 'Facebook';
-
-  double _deliveryCost = 0.0;
+  String _orderSource = 'whatApp';
+  String payment_method = "";
 
   void _nextStep() {
+    if (_currentStep == 0) {
+      // Check Address Form Validation
+      final addressState = addressKey.currentState;
+
+      if (addressState == null || !addressState.validateAddress()) {
+        showCustomSnackbar(context, "Please fill in all required address fields!");
+        return;
+      }
+    }
+
+
     if (_currentStep < 2) {
-      _pageController.nextPage(
-          duration: const Duration(milliseconds: 300), curve: Curves.ease);
+      _pageController.nextPage( duration: const Duration(milliseconds: 300), curve: Curves.ease);
     } else {
       _finishOrder();
     }
@@ -50,10 +55,242 @@ class _CreateOrderState extends State<CreateOrder> {
     }
   }
 
-  void _finishOrder() {
-    // Implement your final API submission here
-    debugPrint("Order Finished");
+  void showCustomSnackbar(BuildContext context, String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.transparent,
+      builder: (_) => CustomSnackbar(message: message),
+    );
   }
+
+  Future<void> _finishOrder() async {
+
+    // 1. Get the current state of the address form via the key
+    final addressState = addressKey.currentState;
+
+    if (_orderItems.isEmpty) {
+      showCustomSnackbar(context, 'Please add one product at least!');
+      return;
+    }
+
+
+    // 2. Prepare the Billing and Shipping Data
+    Map<String, dynamic> billingInfo = {
+      "name": addressState?.bNameController.text,
+      "phone": addressState?.bPhoneController.text,
+      "district": addressState?.selectedDistrict?['name'],
+      "city": addressState?.selectedCity?['name'],
+      "address": addressState?.bAddressController.text,
+    };
+
+    Map<String, dynamic> shippingInfo = addressState!.isShippingSame
+        ? billingInfo // Use billing if same
+        : {
+      "name": addressState.sNameController.text,
+      "phone": addressState.sPhoneController.text,
+      "district": addressState.selectedShipDistrict?['name'],
+      "city": addressState.selectedShipThana?['name'],
+      "address": addressState.sAddressController.text,
+    };
+
+    // 3. Prepare Order Summary Data
+    double subtotal = _calculateTotal();
+    double shippingCost = addressState.deliveryCost;
+    double discount = double.tryParse(_discountController.text) ?? 0.0;
+    double grandTotal = (subtotal + shippingCost) - discount;
+
+    // 4. Construct the Final JSON Object
+    Map<String, dynamic> finalOrderData = {
+      "order_source": _orderSource,
+      "billing": billingInfo,
+      "shipping": shippingInfo,
+      "items": _orderItems, // List of products with quantities
+      "summary": {
+        "subtotal": subtotal,
+        "shipping_cost": shippingCost,
+        "discount": discount,
+        "grand_total": grandTotal,
+      }
+    };
+    _showOrderSummaryDialog(finalOrderData);
+  }
+
+  void _showOrderSummaryDialog(Map<String, dynamic> data) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Confirm Order Data"),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Billing info--'),
+              Text("Customer: ${data['billing']['name']}"),
+              Text("Phone: ${data['billing']['phone']}"),
+              Text("District: ${data['billing']['district']}"),
+              Text("Thana: ${data['billing']['city']}"),
+              const Divider(),
+              Text('Shipping info--'),
+              Text("Receiver: ${data['shipping']['name']}"),
+              Text("Phone: ${data['shipping']['phone']}"),
+              Text("District: ${data['shipping']['district']}"),
+              Text("Thana: ${data['shipping']['city']}"),
+              const Divider(),
+              const Text("Items:", style: TextStyle(fontWeight: FontWeight.bold)),
+              ..._orderItems.map((item) => Text("• ${item['title']} x ${item['quantity']}")).toList(),
+              const Divider(),
+              Text("Grand Total: ৳${data['summary']['grand_total']}",
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Edit")),
+          ElevatedButton(
+              onPressed: () {
+                // Here you would call your POST request to https://getmerchbd.com/api/create-order
+                _submitOrderToApi();
+                // Navigator.pop(context);
+              },
+              child: const Text("Confirm & Send")
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _submitOrderToApi() async {
+    final addressState = addressKey.currentState;
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? moderatorString = prefs.getString('moderator');
+
+    Map<String, dynamic> moderatorMap = jsonDecode(moderatorString!);
+    String moderatorId = moderatorMap['id'].toString();
+    String user_id = moderatorMap['user_id'].toString();
+
+    if (addressState == null) return;
+    // 1. Map your UI data to the required API Model
+    final Map<String, dynamic> orderData = {
+      "moderator_id": moderatorId,
+      "payment_geteway": payment_method, // Hardcoded or from your UI
+      "zone_id":  addressState.zone_id.toString(),
+      "total_items": _orderItems.length.toString(),
+      "total_cost": _calculateTotal().toString(),
+      "invoice_discount": "0",
+      "transaction_id": "CashOnDelivery",
+      "shipping_cost": addressState.deliveryCost.toString(),
+      "discount": _discountController.text.isEmpty ? "0" : _discountController.text,
+      "order_date": DateTime.now().toString().split(' ')[0], // Format: YYYY-MM-DD
+      "ref": _orderSource.toLowerCase(),
+      "shippingCostFrom": "zone",
+
+      // Billing
+      "district": addressState.selectedDistrict?['name'] ?? "",
+      "city": addressState.selectedCity?['name'] ?? "",
+      "name": addressState.bNameController.text,
+      "phone": addressState.bPhoneController.text,
+      "email": "",
+      "address": addressState.bAddressController.text,
+      "postCode": "0000",
+
+      // Shipping (Check if same as billing)
+      "ship_district": addressState.isShippingSame
+          ? (addressState.selectedDistrict?['name'] ?? "")
+          : (addressState.selectedShipDistrict?['name'] ?? ""),
+      "ship_city": addressState.isShippingSame
+          ? (addressState.selectedCity?['name'] ?? "")
+          : (addressState.selectedShipThana?['name'] ?? ""),
+      "ship_name": addressState.isShippingSame ? addressState.bNameController.text : addressState.sNameController.text,
+      "ship_phone": addressState.isShippingSame ? addressState.bPhoneController.text : addressState.sPhoneController.text,
+      "ship_email": "",
+      "ship_address": addressState.isShippingSame ? addressState.bAddressController.text : addressState.sAddressController.text,
+      "ship_postCode": "0000",
+      "created_by": "1", // Replace with logged-in user ID
+
+      // 2. Map the Product Items
+      "order_items": _orderItems.map((item) {
+        return {
+          "product_id": item['id'].toString(),
+          "bundle_promotion_id": null, "buy_one_get_one_id":null,
+          "variation_option_id":null,
+          "product_combination_id":null,
+          "qty": item['quantity'].toString(),
+          "net_price": item['sale_price'].toString(),
+          "sale_price": item['sale_price'].toString(),
+          "discount_price": item['sale_price'].toString(),
+          "vat": "0",
+          "vat_type": "including",
+          "status": "placed",
+          "user_id": user_id,
+          "created_by": user_id
+        };
+      }).toList(),
+    };
+
+    String fullJsonString = jsonEncode(orderData);
+    debugPrint(fullJsonString);
+
+
+    // 3. Send to API
+    try {
+      showDialog(context: context, builder: (context) => const Center(child: CircularProgressIndicator()));
+
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+
+      final response = await http.post(
+        Uri.parse('https://getmerchbd.com/api/create-order'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json', // REQUIRED for JSON requests
+        },
+        body: fullJsonString, // PASS YOUR DATA HERE
+      );
+
+      final data = jsonDecode(response.body);
+      if (data['errors'] != null) {
+        setState(() {
+          final errors = data['errors'] as Map<String, dynamic>;
+          CustomSnackbar(message: errors.toString());
+        });
+        return;
+      }
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _showSuccessDialog();
+        Navigator.pop(context); // Close loading dialog
+        print("${response.body}");
+      } else {
+        throw Exception("Failed to create order: ${response.body}");
+      }
+    } catch (e) {
+      Navigator.pop(context); // Close loading
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+    }
+  }
+
+  void _showSuccessDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Icon(Icons.check_circle, color: Colors.green, size: 60),
+        content: const Text("Order Created Successfully!", textAlign: TextAlign.center),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context); // Close dialog
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const OrderList()));
+            },
+            child: const Text("Go to Order List"),
+          ),
+        ],
+      ),
+    );
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -105,13 +342,10 @@ class _CreateOrderState extends State<CreateOrder> {
                 physics: const NeverScrollableScrollPhysics(), // User must use buttons
                 onPageChanged: (index) => setState(() => _currentStep = index),
                 children: [
-                  AddressForm(
-                    onDataChanged: (data) {
-                      setState(() {
-                        _deliveryCost = data['deliveryCost'];
-                        // Store other data into a local Map if you need it for the API call
-                      });
-                    },
+                  Padding( padding: const EdgeInsets.all(16.0),
+                    child: SingleChildScrollView(
+                      child: AddressForm(key: addressKey),
+                    ),
                   ),
                   _buildStepTwo(),   // Product Search
                   _buildStepThree(), // Final Details
@@ -120,15 +354,11 @@ class _CreateOrderState extends State<CreateOrder> {
             ),
           ],
         ),
-        bottomNavigationBar: _buildBottomNavActions(),
+        bottomNavigationBar: SafeArea(child: _buildBottomNavActions()),
       ),
     );
   }
 
-  int? _selectedProductId;
-  Map<String, dynamic>? _selectedProductDetails;
-
-  // The array that will hold all products in the current order
   List<Map<String, dynamic>> _orderItems = [];
 
   void _addItemToOrder(Map<String, dynamic> product) {
@@ -151,204 +381,48 @@ class _CreateOrderState extends State<CreateOrder> {
       }
     });
   }
+
   // --- STEP 2: PRODUCT SEARCH ---
   Widget _buildStepTwo() {
     return Padding(
       padding: const EdgeInsets.all(15),
-      child: Column(
-        children: [
-          // 1. Search Component
-          ProductSearchAutocomplete(
-            onProductSelected: (product) {
-              _addItemToOrder(product);
-            },
-          ),
-
-          const SizedBox(height: 20),
-          const Row(
-            children: [
-              Icon(Icons.shopping_basket_outlined, color: Colors.orange),
-              SizedBox(width: 8),
-              Text("Order Items", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          const Divider(),
-
-          // 2. The List of selected items
-          Expanded(
-            child: _orderItems.isEmpty ? const Center(child: Text("No products added yet")):
-            ListView.builder(
-              shrinkWrap: true, // Useful if inside a Column
-              physics: const NeverScrollableScrollPhysics(), // Let the parent scroll
-              itemCount: _orderItems.length,
-              itemBuilder: (context, index) {
-                final item = _orderItems[index];
-
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  child: ListTile(
-                    leading: Image.network(
-                      "https://getmerchbd.com/${item['thumbs']}",
-                      width: 40,
-                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.image),
-                    ),
-                    title: Text(item['title'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Row(
-                      children: [
-                        Text("৳${item['sale_price']}", style: const TextStyle(color: Colors.green)),
-                        const SizedBox(width: 15),
-
-                        // --- QUANTITY CONTROLS ---
-                        Container(
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey.shade300),
-                            borderRadius: BorderRadius.circular(5),
-                          ),
-                          child: Row(
-                            children: [
-                              // Minus Button
-                              InkWell(
-                                onTap: () {
-                                  setState(() {
-                                    if (item['quantity'] > 1) {
-                                      item['quantity']--;
-                                    }
-                                  });
-                                },
-                                child: const Icon(Icons.remove, size: 20, color: Colors.red),
-                              ),
-
-                              // Quantity Number
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 10),
-                                child: Text(
-                                  "${item['quantity']}",
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                              ),
-
-                              // Plus Button
-                              InkWell(
-                                onTap: () {
-                                  setState(() {
-                                    item['quantity']++;
-                                  });
-                                },
-                                child: const Icon(Icons.add, size: 20, color: Colors.green),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline, color: Colors.red),
-                      onPressed: () {
-                        setState(() {
-                          _orderItems.removeAt(index);
-                        });
-                      },
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
+      child: SingleChildScrollView( // Allow scrolling when the item list grows
+        child: ProductSearchAutocomplete(
+          orderItems: _orderItems,
+          onProductAdded: (product) => _addItemToOrder(product),
+          onRemoveItem: (index) {
+            setState(() => _orderItems.removeAt(index));
+          },
+          onListChanged: () {
+            setState(() {}); // Re-build parent to refresh totals for Step 3
+          },
+        ),
       ),
     );
   }
 
   // --- STEP 3: FINAL DETAILS ---
   Widget _buildStepThree() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text("Final Details", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 20),
+    final addressState = addressKey.currentState;
+    double shipping = addressState?.deliveryCost ?? 0.0;
+    String cityName = addressState?.selectedCity?['name'] ?? "Not selected";
 
-          // Use Row with Expanded to prevent overflow
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Discount Field
-              Expanded(
-                child: TextFormField(
-                  controller: _discountController,
-                  keyboardType: TextInputType.number,
-                  onChanged: (val) => setState(() {}), // Rebuild to update summary
-                  decoration: const InputDecoration(
-                    labelText: "Discount",
-                    prefixText: "৳",
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 15),
-
-              // Order Source Dropdown
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: _orderSource,
-                  isExpanded: true, // Prevents text overflow
-                  decoration: const InputDecoration(
-                    labelText: "Order Source",
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: ['Facebook', 'Website', 'WhatsApp', 'Direct'].map((String s) {
-                    return DropdownMenuItem(value: s, child: Text(s));
-                  }).toList(),
-                  onChanged: (val) => setState(() => _orderSource = val!),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 30),
-          _buildFinalSummary(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFinalSummary() {
-    double subtotal = _calculateTotal(); // From previous step
-    double discount = double.tryParse(_discountController.text) ?? 0.0;
-    double grandTotal = subtotal - discount;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.orange.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange.shade200),
-      ),
-      child: Column(
-        children: [
-          _summaryRow("Subtotal:", "৳$subtotal"),
-          const SizedBox(height: 8),
-          _summaryRow("Shipping Cost:", "৳$_deliveryCost"),
-          const SizedBox(height: 8),
-          _summaryRow("Discount:", "৳$discount",),
-          const Divider(height: 24),
-          _summaryRow("Grand Total:", "৳${grandTotal < 0 ? 0 : grandTotal}", isBold: true),
-
-        ],
-      ),
-    );
-  }
-
-  Widget _summaryRow(String label, String value, {bool isBold = false, Color? color}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: TextStyle(fontSize: 16, fontWeight: isBold ? FontWeight.bold : FontWeight.normal)),
-        Text(value, style: TextStyle(fontSize: 18, fontWeight: isBold ? FontWeight.bold : FontWeight.normal, color: color ?? Colors.black)),
-      ],
+    return FinalOrderDetails(
+      discountController: _discountController,
+      orderSource: _orderSource,
+      paymentGateway: payment_method, // Pass the current state
+      subtotal: _calculateTotal(),
+      shippingCost: shipping,
+      city: cityName,
+      onSourceChanged: (newSource) {
+        setState(() => _orderSource = newSource);
+      },
+      onPaymentMethodChanged: (newMethod) {
+        setState(() => payment_method = newMethod); // Update parent state
+      },
+      onDiscountChanged: () {
+        setState(() {}); // Refresh for grand total calculation
+      },
     );
   }
 
@@ -356,13 +430,11 @@ class _CreateOrderState extends State<CreateOrder> {
     return _orderItems.fold(0.0, (double sum, item) {
       double price = double.tryParse(item['sale_price'].toString()) ?? 0.0;
       int qty = item['quantity'] ?? 1;
-      return sum + (price * qty) + _deliveryCost;
+      return sum + (price * qty);
+      // Removed _deliveryCost from here to avoid adding it multiple times per item
     });
   }
 
-
-
-  // --- NAVIGATION BUTTONS (REPLACING FOOTER FOR THIS PAGE) ---
   Widget _buildBottomNavActions() {
     return Container(
       padding: const EdgeInsets.all(16),

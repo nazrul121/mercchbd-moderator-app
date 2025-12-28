@@ -7,32 +7,37 @@ class AddressForm extends StatefulWidget {
   const AddressForm({super.key});
 
   @override
-  AddressFormState createState() => AddressFormState(); // Removed underscore
+  AddressFormState createState() => AddressFormState();
 }
 
-// 2. Remove the underscore from the Class name
-class AddressFormState extends State<AddressForm> {
+class AddressFormState extends State<AddressForm> with AutomaticKeepAliveClientMixin {
+  // This prevents the data from being cleared when you move to Step 2 or 3
+  @override
+  bool get wantKeepAlive => true;
+
+  // --- PUBLIC VARIABLES (Parent accesses these via GlobalKey) ---
   double deliveryCost = 0.0;
+  bool isShippingSame = true;
+  String zone_id = '';
 
-  bool _isShippingSame = true;
-
-  // Locations Data
-  List<dynamic> _apiDistricts = []; // Store the 'districts' array from API
-  Map<String, dynamic>? _selectedDistrict; // Store the whole District object
-  Map<String, dynamic>? _selectedCity;     // Store the whole City object
-  double _deliveryCost = 0.0;
-
-  Map<String, dynamic>? _selectedShipDistrict; // Store the whole District object
-  Map<String, dynamic>? _selectedShipThana;
+  // Selected Location Objects
+  Map<String, dynamic>? selectedDistrict;
+  Map<String, dynamic>? selectedCity;
+  Map<String, dynamic>? selectedShipDistrict;
+  Map<String, dynamic>? selectedShipThana;
 
   // Controllers
-  final TextEditingController _bNameController = TextEditingController();
-  final TextEditingController _bPhoneController = TextEditingController();
-  final TextEditingController _bAddressController = TextEditingController();
+  final TextEditingController bNameController = TextEditingController();
+  final TextEditingController bPhoneController = TextEditingController();
+  final TextEditingController bAddressController = TextEditingController();
 
-  final TextEditingController _sNameController = TextEditingController();
-  final TextEditingController _sPhoneController = TextEditingController();
-  final TextEditingController _sAddressController = TextEditingController();
+  final TextEditingController sNameController = TextEditingController();
+  final TextEditingController sPhoneController = TextEditingController();
+  final TextEditingController sAddressController = TextEditingController();
+
+  // Internal API Data
+  List<dynamic> _apiDistricts = [];
+  bool _isLoading = true;
 
   Future<void> _fetchLocations() async {
     try {
@@ -41,23 +46,13 @@ class AddressFormState extends State<AddressForm> {
         final data = json.decode(response.body);
         setState(() {
           _apiDistricts = data['districts'];
-          debugPrint("${_apiDistricts}");
+          _isLoading = false;
         });
       }
     } catch (e) {
+      setState(() => _isLoading = false);
       debugPrint("Error fetching locations: $e");
     }
-  }
-
-  void _sendDataToParent() {
-    widget.onDataChanged({
-      'deliveryCost': _deliveryCost,
-      'billingDistrict': _selectedDistrict,
-      'billingCity': _selectedCity,
-      'billingAddress': _bAddressController.text,
-      'isShippingSame': _isShippingSame,
-      // Add other fields as needed
-    });
   }
 
   @override
@@ -68,118 +63,139 @@ class AddressFormState extends State<AddressForm> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
+
+    if (_isLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(20.0),
+          child: CircularProgressIndicator(color: Colors.orange),
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if(_isShippingSame) SizedBox(height: 30,),
+        if (isShippingSame) const SizedBox(height: 20),
 
         _buildSectionHeader(Icons.account_balance_wallet, "Billing Information"),
         const SizedBox(height: 15),
-        _buildTextField(_bNameController, "Full Name"),
+        _buildTextField(bNameController, "Full Name"),
         const SizedBox(height: 10),
-        _buildTextField(_bPhoneController, "Phone No"),
+        _buildTextField(bPhoneController, "Phone No"),
         const SizedBox(height: 10),
 
-        // Billing Dropdowns
+        // --- BILLING DROPDOWNS ---
         Row(
           children: [
             Expanded(
               child: CustomSearchableDropdown<Map<String, dynamic>>(
                 label: "District",
                 items: _apiDistricts.cast<Map<String, dynamic>>(),
-                selectedItem: _selectedDistrict,
+                selectedItem: selectedDistrict,
                 itemLabelBuilder: (item) => item['name'] ?? '',
                 onSelected: (val) {
                   setState(() {
-                    _selectedDistrict = val;
-                    _selectedCity = null; // Reset child
-                    _deliveryCost = double.tryParse(val?['delivery_cost'].toString() ?? '0') ?? 0.0;
+                    selectedDistrict = val;
+                    selectedCity = null; // Reset city when district changes
+                    deliveryCost = double.tryParse(val?['delivery_cost'].toString() ?? '0') ?? 0.0;
                   });
-                  _sendDataToParent();
                 },
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
-                  child: CustomSearchableDropdown<Map<String, dynamic>>(
-                    label: "City",
-                    enabled: _selectedDistrict != null,
-                    items: (_selectedDistrict?['cities'] as List? ?? []).cast<Map<String, dynamic>>(),
-                    selectedItem: _selectedCity,
-                    itemLabelBuilder: (item) => item['name'] ?? '',
-                    onSelected: (val) {
-                      setState(() {
-                        _selectedCity = val;
-                        // Access nested zone delivery cost
-                        if (val != null && val['zones'] != null && (val['zones'] as List).isNotEmpty) {
-                          _deliveryCost = double.tryParse(val['zones'][0]['delivery_cost'].toString() ?? '0') ?? 0.0;
-                        }
-                      });
-                    },
-                  ),
-                ),
+              child: CustomSearchableDropdown<Map<String, dynamic>>(
+                label: "City",
+                enabled: selectedDistrict != null,
+                items: (selectedDistrict?['cities'] as List? ?? []).cast<Map<String, dynamic>>(),
+                selectedItem: selectedCity,
+                itemLabelBuilder: (item) => item['name'] ?? '',
+                onSelected: (val) {
+                  // debugPrint("Selected City: $val");
+
+                  setState(() {
+                    selectedCity = val;
+                    if (val != null && val['zones'] != null && (val['zones'] as List).isNotEmpty) {
+                      // We look inside the first zone of the map
+                      zone_id = val['zones'][0]['id'].toString();
+
+                      // Convert whatever we found to a double safely
+                      deliveryCost = double.tryParse(val['zones'][0]['delivery_cost'].toString() ?? '0') ?? 0.0;
+                    }
+                  });
+                },
+              ),
+            ),
           ],
         ),
-        if (_deliveryCost != 0.0 && _selectedCity != null && _isShippingSame==true)
-          Text("Delivery Cost for ${_selectedCity?['name']} : ৳${_deliveryCost.toString()}",
-            style: const TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.w500),
+
+        if (deliveryCost != 0.0 && selectedCity != null && isShippingSame)
+          Padding(
+            padding: const EdgeInsets.only(top: 8.0),
+            child: Text(
+              "Delivery Cost for ${selectedCity?['name']} : ৳${deliveryCost.toString()}",
+              style: const TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.w500),
+            ),
           ),
 
         const SizedBox(height: 10),
-        _buildTextField(_bAddressController, "Street Address"),
-
+        _buildTextField(bAddressController, "Street Address"),
         const SizedBox(height: 15),
 
         CheckboxListTile(
           contentPadding: EdgeInsets.zero,
-          title: Text("Shipping address is same as billing"),
-          value: _isShippingSame,
+          title: const Text("Shipping address is same as billing"),
+          value: isShippingSame,
           activeColor: Colors.orange,
           controlAffinity: ListTileControlAffinity.leading,
-          onChanged: (val) => setState(() => _isShippingSame = val ?? false),
+          onChanged: (val) => setState(() => isShippingSame = val ?? false),
         ),
 
         // --- SHIPPING SECTION ---
-        if (!_isShippingSame) ...[
+        if (!isShippingSame) ...[
           const Divider(height: 30),
           _buildSectionHeader(Icons.local_shipping, "Shipping Information"),
           const SizedBox(height: 15),
-          _buildTextField(_sNameController, "Recipient Name"),
+          _buildTextField(sNameController, "Recipient Name"),
           const SizedBox(height: 10),
-          _buildTextField(_sPhoneController, "Recipient Phone"),
+          _buildTextField(sPhoneController, "Recipient Phone"),
           const SizedBox(height: 10),
 
           Row(
             children: [
               Expanded(
                 child: CustomSearchableDropdown<Map<String, dynamic>>(
-                  label: "District",
-                  items: _apiDistricts.cast<Map<String, dynamic>>(),
-                  selectedItem: _selectedShipDistrict,
-                  itemLabelBuilder: (item) => item['name'] ?? '',
-                  onSelected: (val) {
-                    setState(() {
-                      _selectedShipDistrict = val;
-                      _selectedShipThana = null; // Reset child
-                      _deliveryCost = double.tryParse(val?['delivery_cost'].toString() ?? '0') ?? 0.0;
-                    });
-                  },
+                    label: "District",
+                    items: _apiDistricts.cast<Map<String, dynamic>>(),
+                    selectedItem: selectedShipDistrict,
+                    itemLabelBuilder: (item) => item['name'] ?? '',
+                    onSelected: (val) {
+                      setState(() {
+                        selectedShipDistrict = val;
+                        selectedShipThana = null;
+                        deliveryCost = double.tryParse(val?['delivery_cost'].toString() ?? '0') ?? 0.0;
+                      });
+                    }
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: CustomSearchableDropdown<Map<String, dynamic>>(
                   label: "City",
-                  enabled: _selectedShipDistrict != null,
-                  items: (_selectedShipDistrict?['cities'] as List? ?? []).cast<Map<String, dynamic>>(),
-                  selectedItem: _selectedShipThana,
+                  enabled: selectedShipDistrict != null,
+                  items: (selectedShipDistrict?['cities'] as List? ?? []).cast<Map<String, dynamic>>(),
+                  selectedItem: selectedShipThana,
                   itemLabelBuilder: (item) => item['name'] ?? '',
                   onSelected: (val) {
                     setState(() {
-                      _selectedShipThana = val;
-                      // Access nested zone delivery cost
+                      selectedShipThana = val;
                       if (val != null && val['zones'] != null && (val['zones'] as List).isNotEmpty) {
-                        _deliveryCost = double.tryParse(val['zones'][0]['delivery_cost'].toString() ?? '0') ?? 0.0;
+                        // We look inside the first zone of the map
+                        zone_id = val['zones'][0]['id'].toString();
+                        // Convert whatever we found to a double safely
+                        deliveryCost = double.tryParse(val['zones'][0]['delivery_cost'].toString() ?? '0') ?? 0.0;
                       }
                     });
                   },
@@ -187,21 +203,24 @@ class AddressFormState extends State<AddressForm> {
               ),
             ],
           ),
-          const SizedBox(height: 10),
 
-          if (_deliveryCost != 0.0 && _selectedShipThana != null)
-            Text(
-              "Delivery Cost for ${_selectedShipThana?['name']} : ৳${_deliveryCost.toString()}",
-              style: const TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.w500),
+          if (deliveryCost != 0.0 && selectedShipThana != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8.0),
+              child: Text(
+                "Delivery Cost for ${selectedShipThana?['name']} is ${selectedShipThana?['name']} : ৳${deliveryCost.toString()}",
+                style: const TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.w500),
+              ),
             ),
 
           const SizedBox(height: 10),
-          _buildTextField(_sAddressController, "Shipping Street Address"),
+          _buildTextField(sAddressController, "Shipping Street Address"),
         ],
       ],
     );
   }
 
+  // --- HELPER METHODS ---
 
   Widget _buildSectionHeader(IconData icon, String title) {
     return Row(
@@ -224,4 +243,26 @@ class AddressFormState extends State<AddressForm> {
       ),
     );
   }
+
+
+  bool validateAddress() {
+    // 1. Check Billing Info
+    if (bNameController.text.trim().isEmpty) return false;
+    if (bPhoneController.text.trim().isEmpty) return false;
+    if (selectedDistrict == null) return false;
+    if (selectedCity == null) return false;
+    if (bAddressController.text.trim().isEmpty) return false;
+
+    // 2. Check Shipping Info if "Same as Billing" is NOT checked
+    if (!isShippingSame) {
+      if (sNameController.text.trim().isEmpty) return false;
+      if (sPhoneController.text.trim().isEmpty) return false;
+      if (selectedShipDistrict == null) return false;
+      if (selectedShipThana == null) return false;
+      if (sAddressController.text.trim().isEmpty) return false;
+    }
+
+    return true; // All checks passed
+  }
+
 }

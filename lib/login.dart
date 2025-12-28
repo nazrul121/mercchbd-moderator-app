@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:merchbd/includes/Footer.dart';
+import 'package:merchbd/includes/SnackBar.dart';
 import 'package:merchbd/screens/home.dart';
 import 'package:merchbd/utils/auth_guard.dart';
 import 'package:merchbd/utils/auth_service.dart';
@@ -68,7 +69,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
         url,
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json', // CRITICAL: Tells the server to talk in JSON
+          'Accept': 'application/json',
         },
         body: jsonEncode({
           'username': username,
@@ -82,19 +83,30 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
 
       final data = jsonDecode(response.body);
 
+      // ❌ HANDLE VALIDATION ERRORS (The { "errors": { ... } } structure)
+      if (data['errors'] != null) {
+        setState(() {
+          final errors = data['errors'] as Map<String, dynamic>;
+          _usernameError = (errors['username'] != null) ? errors['username'][0] : null;
+          _passwordError = (errors['password'] != null) ? errors['password'][0] : null;
+          _isLoading = false;
+        });
+        return;
+      }
+
       // ✅ SUCCESS
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body); // Decode ONCE
 
         // 1. Moderator Check (Uncomment if needed)
-        /* if (data['moderator'] == null) {
+        if (data['moderator'] == null) {
+            CustomSnackbar(message: 'Access Denied: Only moderators can logIn');
            setState(() {
              _error = 'Access Denied: Only moderators can logIn';
              _isLoading = false;
            });
            return;
         }
-        */
 
         if (data['status'] == 'success' || data['token'] != null) {
           final prefs = await SharedPreferences.getInstance();
@@ -106,6 +118,10 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
             await prefs.setString('user_email', user['email'] ?? '');
             await prefs.setString('user_phone', user['phone'] ?? '');
             await prefs.setInt('user_id', user['id'] ?? 0);
+          }
+          if (data['moderator'] != null) {
+            final moderator = jsonEncode(data['moderator']);
+            await prefs.setString('moderator', moderator);
           }
 
           await prefs.setInt('login_time', DateTime.now().millisecondsSinceEpoch);
@@ -125,27 +141,15 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
         }
       }
 
-      // ❌ HANDLE VALIDATION ERRORS (The { "errors": { ... } } structure)
-      if (data['errors'] != null) {
-        setState(() {
-          final errors = data['errors'] as Map<String, dynamic>;
-          _usernameError = (errors['username'] != null) ? errors['username'][0] : null;
-          _passwordError = (errors['password'] != null) ? errors['password'][0] : null;
-          _isLoading = false;
-        });
-        return;
-      }
-
       // ❌ HANDLE GENERAL MESSAGE (Invalid credentials)
       setState(() {
         _error = data['message']?.toString() ?? 'Invalid username or password.';
         _isLoading = false;
       });
-
     } catch (e) {
       debugPrint('Login error: $e');
       setState(() {
-        _error = 'Connection error. Check your internet.';
+        _error = 'Unexpected error. Please try again! $e';
         _isLoading = false;
       });
     }
@@ -247,14 +251,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                               ],
 
                               const SizedBox(height: 24),
-                              TextButton(onPressed: (){
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute<void>(
-                                    builder: (BuildContext context) => const HomeScreen(), // The new page widget
-                                  ),
-                                );
-                              }, child: Text('Go home')),
 
                               SizedBox(
                                 width: double.infinity,
