@@ -26,6 +26,7 @@ class _CreateOrderState extends State<CreateOrder> {
   final GlobalKey<AddressFormState> addressKey = GlobalKey<AddressFormState>();
 
   final _discountController = TextEditingController();
+  final _noteController = TextEditingController();
   String _orderSource = 'whatApp';
   String payment_method = "";
 
@@ -33,9 +34,9 @@ class _CreateOrderState extends State<CreateOrder> {
     if (_currentStep == 0) {
       // Check Address Form Validation
       final addressState = addressKey.currentState;
-
+      //
       if (addressState == null || !addressState.validateAddress()) {
-        showCustomSnackbar(context, "Please fill in all required address fields!");
+        showCustomSnackbar(context, "Please fill in all required address fields!",'warning');
         return;
       }
     }
@@ -55,12 +56,12 @@ class _CreateOrderState extends State<CreateOrder> {
     }
   }
 
-  void showCustomSnackbar(BuildContext context, String message) {
+  void showCustomSnackbar(BuildContext context, String message, String type) {
     showDialog(
       context: context,
       barrierDismissible: false,
       barrierColor: Colors.transparent,
-      builder: (_) => CustomSnackbar(message: message),
+      builder: (_) => CustomSnackbar(message: message, type:type),
     );
   }
 
@@ -70,10 +71,9 @@ class _CreateOrderState extends State<CreateOrder> {
     final addressState = addressKey.currentState;
 
     if (_orderItems.isEmpty) {
-      showCustomSnackbar(context, 'Please add one product at least!');
+      showCustomSnackbar(context, 'Please add some product item to continue!', 'error');
       return;
     }
-
 
     // 2. Prepare the Billing and Shipping Data
     Map<String, dynamic> billingInfo = {
@@ -110,6 +110,7 @@ class _CreateOrderState extends State<CreateOrder> {
         "subtotal": subtotal,
         "shipping_cost": shippingCost,
         "discount": discount,
+        'note': _noteController.text,
         "grand_total": grandTotal,
       }
     };
@@ -167,38 +168,37 @@ class _CreateOrderState extends State<CreateOrder> {
 
     Map<String, dynamic> moderatorMap = jsonDecode(moderatorString!);
     String moderatorId = moderatorMap['id'].toString();
-    String user_id = moderatorMap['user_id'].toString();
+    String userId = moderatorMap['user_id'].toString();
 
-    if (addressState == null) return;
     // 1. Map your UI data to the required API Model
     final Map<String, dynamic> orderData = {
       "moderator_id": moderatorId,
       "payment_geteway": payment_method, // Hardcoded or from your UI
-      "zone_id":  addressState.zone_id.toString(),
+      "zone_id":  addressState?.zone_id.toString(),
       "total_items": _orderItems.length.toString(),
       "total_cost": _calculateTotal().toString(),
       "invoice_discount": "0",
-      "transaction_id": "CashOnDelivery",
-      "shipping_cost": addressState.deliveryCost.toString(),
+      "shipping_cost": addressState?.deliveryCost.toString(),
       "discount": _discountController.text.isEmpty ? "0" : _discountController.text,
       "order_date": DateTime.now().toString().split(' ')[0], // Format: YYYY-MM-DD
       "ref": _orderSource.toLowerCase(),
       "shippingCostFrom": "zone",
 
       // Billing
-      "district": addressState.selectedDistrict?['name'] ?? "",
-      "city": addressState.selectedCity?['name'] ?? "",
-      "name": addressState.bNameController.text,
-      "phone": addressState.bPhoneController.text,
+      "district": addressState?.selectedDistrict?['name'] ?? "",
+      'note': _noteController.text,
+      "city": addressState?.selectedCity?['name'] ?? "",
+      "name": addressState?.bNameController.text,
+      "phone": addressState?.bPhoneController.text,
       "email": "",
-      "address": addressState.bAddressController.text,
+      "address": addressState?.bAddressController.text,
       "postCode": "0000",
 
       // Shipping (Check if same as billing)
-      "ship_district": addressState.isShippingSame
-          ? (addressState.selectedDistrict?['name'] ?? "")
-          : (addressState.selectedShipDistrict?['name'] ?? ""),
-      "ship_city": addressState.isShippingSame
+      "ship_district": addressState!.isShippingSame
+          ? (addressState?.selectedDistrict?['name'] ?? "")
+          : (addressState?.selectedShipDistrict?['name'] ?? ""),
+      "ship_city": addressState!.isShippingSame
           ? (addressState.selectedCity?['name'] ?? "")
           : (addressState.selectedShipThana?['name'] ?? ""),
       "ship_name": addressState.isShippingSame ? addressState.bNameController.text : addressState.sNameController.text,
@@ -214,7 +214,7 @@ class _CreateOrderState extends State<CreateOrder> {
           "product_id": item['id'].toString(),
           "bundle_promotion_id": null, "buy_one_get_one_id":null,
           "variation_option_id":null,
-          "product_combination_id":null,
+          "product_combination_id":item['product_combination_id'].toString(),
           "qty": item['quantity'].toString(),
           "net_price": item['sale_price'].toString(),
           "sale_price": item['sale_price'].toString(),
@@ -222,46 +222,43 @@ class _CreateOrderState extends State<CreateOrder> {
           "vat": "0",
           "vat_type": "including",
           "status": "placed",
-          "user_id": user_id,
-          "created_by": user_id
+          "user_id": userId,
+          "created_by": userId
         };
       }).toList(),
     };
-
     String fullJsonString = jsonEncode(orderData);
-    debugPrint(fullJsonString);
-
-
+    // debugPrint("ready req: $fullJsonString");
     // 3. Send to API
     try {
-      showDialog(context: context, builder: (context) => const Center(child: CircularProgressIndicator()));
 
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('auth_token');
 
+      // debugPrint("submitting data: $fullJsonString");
+
       final response = await http.post(
         Uri.parse('https://getmerchbd.com/api/create-order'),
         headers: {
-          'Authorization': 'Bearer $token',
-          'Accept': 'application/json',
+          'Authorization': 'Bearer $token', 'Accept': 'application/json',
           'Content-Type': 'application/json', // REQUIRED for JSON requests
-        },
-        body: fullJsonString, // PASS YOUR DATA HERE
+        },body: fullJsonString, // PASS YOUR DATA HERE
       );
-
       final data = jsonDecode(response.body);
-      if (data['errors'] != null) {
+      debugPrint("return data: $data");
+
+      if (response.statusCode == 422) {
         setState(() {
           final errors = data['errors'] as Map<String, dynamic>;
-          CustomSnackbar(message: errors.toString());
+          showCustomSnackbar(context, errors.toString(),'error');
         });
         return;
       }
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
+
+      if (response.statusCode == 201) {
         _showSuccessDialog();
-        Navigator.pop(context); // Close loading dialog
-        print("${response.body}");
+        print("Order success with: ${response.body}");
       } else {
         throw Exception("Failed to create order: ${response.body}");
       }
@@ -359,24 +356,30 @@ class _CreateOrderState extends State<CreateOrder> {
     );
   }
 
+
   List<Map<String, dynamic>> _orderItems = [];
 
   void _addItemToOrder(Map<String, dynamic> product) {
     setState(() {
-      // We check if the product is already in the list to avoid duplicates
-      bool exists = _orderItems.any((item) => item['id'] == product['id']);
-      if (!exists) {
-        // Add product with a default quantity of 1
+      // 1. Identify uniqueness using both Product ID and Variation ID
+      int index = _orderItems.indexWhere((item) =>
+      item['id'] == product['id'] &&
+          item['product_combination_id'] == product['variation_option_id'].toString()
+      );
+
+      if (index == -1) {
+        // 2. Add product with all necessary display data
         _orderItems.add({
-          'id': product['id'],
-          'title': product['title'],
+          'id': product['id'], 'title': product['title'],
           'sale_price': product['sale_price'],
-          'thumbs': product['thumbs'],
-          'quantity': 1,
+          'thumbs': product['thumbs'], 'quantity': 1,
+          // FIX: Access variation_option_id directly from the product map
+          'product_combination_id': product['variation_option_id'].toString(),
+          // Save this for the UI display
+          'selected_variation': product['selected_variation'],
         });
       } else {
-        // If it exists, maybe just increase the quantity?
-        int index = _orderItems.indexWhere((item) => item['id'] == product['id']);
+        // 3. Increment quantity if the exact combination already exists
         _orderItems[index]['quantity']++;
       }
     });
@@ -409,6 +412,7 @@ class _CreateOrderState extends State<CreateOrder> {
 
     return FinalOrderDetails(
       discountController: _discountController,
+      noteController: _noteController,
       orderSource: _orderSource,
       paymentGateway: payment_method, // Pass the current state
       subtotal: _calculateTotal(),

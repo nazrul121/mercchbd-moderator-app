@@ -38,6 +38,9 @@ dependencies:
   http: ^1.2.0
   intl: ^0.20.2
   dropdown_search: ^6.0.2
+  image_picker: ^1.2.1
+  http_parser: ^4.1.2
+  timezone: ^0.10.1
 
 dev_dependencies:
   flutter_test:

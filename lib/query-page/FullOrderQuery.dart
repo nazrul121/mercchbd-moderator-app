@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:merchbd/includes/loadingWidget.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../screens/order/order_details.dart';
@@ -35,19 +36,19 @@ class _OrderQueryState extends State<OrderQuery> {
     });
   }
 
-  // --- CORRECTED FETCH METHOD ---
   Future<void> fetchOrders() async {
     if (_isLoading || !_hasMore) return;
-
     setState(() => _isLoading = true);
 
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('auth_token');
 
+      String? moderatorString = prefs.getString('moderator');
+      Map<String, dynamic> moderatorMap = jsonDecode(moderatorString!);
       // 1. Build the dynamic URL
-      String url = 'https://getmerchbd.com/api/orders/10?page=$_currentPage';
-
+      String url = 'https://getmerchbd.com/api/moderator-orders/${moderatorMap['id']}/10?page=$_currentPage';
+      print("order url: $url");
       // 2. Append the status filter if one is selected
       if (_selectedStatusId != null) {
         url += '&status=$_selectedStatusId';
@@ -114,9 +115,10 @@ class _OrderQueryState extends State<OrderQuery> {
         _buildFilterChips(),
 
         Expanded(
-          child: _orders.isEmpty && !_isLoading
-              ? const Center(child: Text("No orders found for this status"))
-              : ListView.builder(
+          child: _orders.isEmpty && !_isLoading ?  Center(
+              child: Text("No orders found for this status", style: TextStyle(color:Colors.red.shade300, fontWeight: FontWeight.bold, fontFamily: "Audiowide"),)
+          )
+          : ListView.builder(
             controller: _scrollController,
             itemCount: _orders.length + (_hasMore ? 1 : 0),
             itemBuilder: (context, index) {
@@ -174,7 +176,7 @@ class _OrderQueryState extends State<OrderQuery> {
               } else {
                 return const Padding(
                   padding: EdgeInsets.all(15),
-                  child: Center(child: CircularProgressIndicator(color: Colors.orange)),
+                  child: LoadingWidget(),
                 );
               }
             },

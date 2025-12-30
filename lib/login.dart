@@ -29,6 +29,15 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
+  void showCustomSnackbar(BuildContext context, String message, String type) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.transparent,
+      builder: (_) => CustomSnackbar(message: message,type: type),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -100,11 +109,11 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
 
         // 1. Moderator Check (Uncomment if needed)
         if (data['moderator'] == null) {
-            CustomSnackbar(message: 'Access Denied: Only moderators can logIn');
            setState(() {
              _error = 'Access Denied: Only moderators can logIn';
              _isLoading = false;
            });
+           showCustomSnackbar(context, _error!, 'error');
            return;
         }
 

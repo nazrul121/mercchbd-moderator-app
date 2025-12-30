@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:merchbd/includes/loadingWidget.dart';
 import '../../includes/CustomSearchableDropdown.dart';
 
 class AddressForm extends StatefulWidget {
@@ -69,7 +70,7 @@ class AddressFormState extends State<AddressForm> with AutomaticKeepAliveClientM
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(20.0),
-          child: CircularProgressIndicator(color: Colors.orange),
+          child: LoadingWidget(),
         ),
       );
     }
@@ -113,15 +114,14 @@ class AddressFormState extends State<AddressForm> with AutomaticKeepAliveClientM
                 selectedItem: selectedCity,
                 itemLabelBuilder: (item) => item['name'] ?? '',
                 onSelected: (val) {
-                  // debugPrint("Selected City: $val");
+                  String zoneName = val?['zones'][0]['name'];
+                  print("zoneName: $zoneName");
 
                   setState(() {
                     selectedCity = val;
                     if (val != null && val['zones'] != null && (val['zones'] as List).isNotEmpty) {
-                      // We look inside the first zone of the map
                       zone_id = val['zones'][0]['id'].toString();
-
-                      // Convert whatever we found to a double safely
+                      print("$zone_id");
                       deliveryCost = double.tryParse(val['zones'][0]['delivery_cost'].toString() ?? '0') ?? 0.0;
                     }
                   });
@@ -150,7 +150,12 @@ class AddressFormState extends State<AddressForm> with AutomaticKeepAliveClientM
           value: isShippingSame,
           activeColor: Colors.orange,
           controlAffinity: ListTileControlAffinity.leading,
-          onChanged: (val) => setState(() => isShippingSame = val ?? false),
+           onChanged: (val) {
+             setState(() {
+               isShippingSame = val ?? false;
+             });
+             _updateZoneAndCost();
+           },
         ),
 
         // --- SHIPPING SECTION ---
@@ -167,7 +172,7 @@ class AddressFormState extends State<AddressForm> with AutomaticKeepAliveClientM
             children: [
               Expanded(
                 child: CustomSearchableDropdown<Map<String, dynamic>>(
-                    label: "District",
+                    label: "Shipping District",
                     items: _apiDistricts.cast<Map<String, dynamic>>(),
                     selectedItem: selectedShipDistrict,
                     itemLabelBuilder: (item) => item['name'] ?? '',
@@ -183,21 +188,20 @@ class AddressFormState extends State<AddressForm> with AutomaticKeepAliveClientM
               const SizedBox(width: 10),
               Expanded(
                 child: CustomSearchableDropdown<Map<String, dynamic>>(
-                  label: "City",
+                  label: "Shipping City",
                   enabled: selectedShipDistrict != null,
                   items: (selectedShipDistrict?['cities'] as List? ?? []).cast<Map<String, dynamic>>(),
                   selectedItem: selectedShipThana,
                   itemLabelBuilder: (item) => item['name'] ?? '',
                   onSelected: (val) {
+                    String zoneName = val?['zones'][0]['name'];
+                    print("zoneName: $zoneName");
+
                     setState(() {
                       selectedShipThana = val;
-                      if (val != null && val['zones'] != null && (val['zones'] as List).isNotEmpty) {
-                        // We look inside the first zone of the map
-                        zone_id = val['zones'][0]['id'].toString();
-                        // Convert whatever we found to a double safely
-                        deliveryCost = double.tryParse(val['zones'][0]['delivery_cost'].toString() ?? '0') ?? 0.0;
-                      }
                     });
+                    _updateZoneAndCost();
+
                   },
                 ),
               ),
@@ -208,7 +212,7 @@ class AddressFormState extends State<AddressForm> with AutomaticKeepAliveClientM
             Padding(
               padding: const EdgeInsets.only(top: 8.0),
               child: Text(
-                "Delivery Cost for ${selectedShipThana?['name']} is ${selectedShipThana?['name']} : ৳${deliveryCost.toString()}",
+                "Delivery Cost for ${selectedShipThana?['name']} : ৳${deliveryCost.toString()}",
                 style: const TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.w500),
               ),
             ),
@@ -263,6 +267,28 @@ class AddressFormState extends State<AddressForm> with AutomaticKeepAliveClientM
     }
 
     return true; // All checks passed
+  }
+
+  void _updateZoneAndCost() {
+    // Determine which location to use based on the checkbox
+    final activeCity = isShippingSame ? selectedCity : selectedShipThana;
+
+    setState(() {
+      if (activeCity != null &&
+          activeCity['zones'] != null &&
+          (activeCity['zones'] as List).isNotEmpty) {
+
+        final firstZone = activeCity['zones'][0];
+        zone_id = firstZone['id'].toString();
+        deliveryCost = double.tryParse(firstZone['delivery_cost'].toString()) ?? 0.0;
+
+        debugPrint("Updated: zone_id=$zone_id, cost=$deliveryCost");
+      } else {
+        // Reset if no city is selected
+        zone_id = '';
+        deliveryCost = 0.0;
+      }
+    });
   }
 
 }

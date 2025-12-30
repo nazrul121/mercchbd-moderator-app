@@ -1,19 +1,73 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:merchbd/includes/loadingWidget.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:merchbd/includes/CustomAppBar.dart';
 import 'package:merchbd/includes/Footer.dart';
 import 'package:merchbd/utils/auth_guard.dart';
 
-class PaymentScreen extends StatelessWidget {
+import '../includes/ui_helper.dart';
+
+class PaymentScreen extends StatefulWidget {
   const PaymentScreen({super.key});
 
   @override
+  State<PaymentScreen> createState() => _PaymentScreenState();
+}
+
+class _PaymentScreenState extends State<PaymentScreen> {
+  List<dynamic> _payments = [];
+  bool _isLoading = true;
+  int _currentPage = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchPaymentData();
+  }
+
+  Future<void> _fetchPaymentData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+      final moderatorString = prefs.getString('moderator');
+
+      if (moderatorString == null) return;
+
+      Map<String, dynamic> moderatorMap = jsonDecode(moderatorString);
+      int moderatorId = moderatorMap['id'];
+
+      final url = Uri.parse('https://getmerchbd.com/api/payments/$moderatorId?page=$_currentPage');
+
+      final response = await http.get(url, headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      });
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          // Check if data is paginated (data['data']) or a direct list
+          _payments = data is List ? data : data['data'] ?? [];
+          _isLoading = false;
+        });
+      } else {
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      debugPrint("Error fetching payments: $e");
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Get the screen width
     double screenWidth = MediaQuery.of(context).size.width;
 
     return AuthGuard(
       child: Scaffold(
-        backgroundColor: Colors.white, // Changed to white for seamless 100% look
+        backgroundColor: Colors.white,
         appBar: buildCustomAppBar(context, 'Payments'),
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -36,35 +90,38 @@ class PaymentScreen extends StatelessWidget {
               ),
             ),
 
-            // Use Expanded or flexible to let the table take space
             Expanded(
-              child: Scrollbar(
+              child: _isLoading? LoadingWidget()
+             : _payments.isEmpty
+                  ? Center(child: Text("No payment history found", style: TextStyle(color:Colors.red.shade300, fontWeight: FontWeight.bold, fontFamily: "Audiowide")))
+             : Scrollbar(
                 thumbVisibility: true,
                 thickness: 6.0,
-                
                 child: SingleChildScrollView(
-                  scrollDirection: Axis.vertical, // Allow vertical scrolling
+                  scrollDirection: Axis.vertical,
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
-                    padding: EdgeInsets.symmetric(horizontal:5, vertical: 0),
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 0),
                     child: SizedBox(
-                      width: screenWidth, // Forces the container to screen width
+                      width: screenWidth > 400 ? screenWidth : 400, // Ensure min width for table
                       child: DataTable(
-                        // horizontalMargin: 16, // Padding inside the table
-                        columnSpacing: screenWidth * 0.1, // Distribute spacing based on screen
+                        columnSpacing: screenWidth * 0.05,
                         headingRowColor: WidgetStateProperty.all(Colors.orange.shade50),
-                        // Force columns to distribute 100%
                         columns: const [
-                          DataColumn(label: Expanded(child: Text('Date', style: TextStyle(fontFamily: 'Audiowide')))),
-                          DataColumn(label: Expanded(child: Text('Route', style: TextStyle(fontFamily: 'Audiowide')))),
-                          DataColumn(label: Expanded(child: Text('Amount', style: TextStyle(fontFamily: 'Audiowide')))),
+                          DataColumn(label: Text('Date', style: TextStyle(fontFamily: 'Audiowide'))),
+                          DataColumn(label: Text('Route', style: TextStyle(fontFamily: 'Audiowide'))),
+                          DataColumn(label: Text('Amount', style: TextStyle(fontFamily: 'Audiowide'))),
                         ],
-                        rows: [
-                          _buildDataRow('10/12/2024', 'bKash', '৳5,000'),
-                          _buildDataRow('11/12/2024', 'Rocket', '৳2,500'),
-                          _buildDataRow('12/12/2024', 'Nagad', '৳3,200'),
-                          _buildDataRow('13/12/2024', 'Bank', '৳10,000'),
-                        ],
+                        rows: _payments.map((payment) {
+                          // Get the raw date string from the API
+                          String rawDate = payment['date'] ?? payment['payment_date'].toString().split('T')[0];
+
+                          return _buildDataRow(
+                              formatMyDate(rawDate), // <--- Use the formatter here
+                              payment['route'] ?? payment['method'] ?? 'N/A',
+                              "৳${payment['amount']}"
+                          );
+                        }).toList(),
                       ),
                     ),
                   ),

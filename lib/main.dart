@@ -8,6 +8,8 @@ import 'package:merchbd/screens/profile.dart';
 import 'package:merchbd/screens/targets.dart';
 import 'package:merchbd/utils/auth_guard.dart';
 import 'dart:io';
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
 
 class MyHttpOverrides extends HttpOverrides {
   @override
@@ -20,6 +22,12 @@ class MyHttpOverrides extends HttpOverrides {
 void main() {
   HttpOverrides.global = MyHttpOverrides();
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize the timezone database
+  tz.initializeTimeZones();
+  // Set the default location to Bangladesh
+  tz.setLocalLocation(tz.getLocation('Asia/Dhaka'));
+
   runApp(const MyApp());
 }
 
@@ -38,6 +46,7 @@ class MyApp extends StatelessWidget {
         '/payments': (context) => const AuthGuard(child: PaymentScreen()),
         '/profile': (context) => const AuthGuard(child: Profile()),
       },
+      initialRoute: '/home',
       title: 'Merch BD',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.orange),

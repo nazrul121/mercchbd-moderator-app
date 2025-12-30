@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 class CustomSnackbar extends StatefulWidget {
   final String message;
   final Duration duration;
+  final String type; // 1. Define the field here
 
   const CustomSnackbar({
     super.key,
     required this.message,
+    required this.type, // 2. Add it to the constructor properly
     this.duration = const Duration(seconds: 3),
   });
 
@@ -14,8 +16,7 @@ class CustomSnackbar extends StatefulWidget {
   State<CustomSnackbar> createState() => _CustomSnackbarState();
 }
 
-class _CustomSnackbarState extends State<CustomSnackbar>
-    with SingleTickerProviderStateMixin {
+class _CustomSnackbarState extends State<CustomSnackbar> with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<Offset> _slideAnimation;
   late final Animation<double> _fadeAnimation;
@@ -30,7 +31,7 @@ class _CustomSnackbarState extends State<CustomSnackbar>
     );
 
     _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 1),
+      begin: const Offset(0, 1), // Slides from bottom
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
 
@@ -38,12 +39,15 @@ class _CustomSnackbarState extends State<CustomSnackbar>
 
     _controller.forward();
 
+    // Auto-dismiss logic
     Future.delayed(widget.duration, () {
-      _controller.reverse().then((_) {
-        if (mounted) {
-          Navigator.of(context).pop();
-        }
-      });
+      if (mounted) {
+        _controller.reverse().then((_) {
+          if (mounted) {
+            Navigator.of(context).pop();
+          }
+        });
+      }
     });
   }
 
@@ -55,6 +59,15 @@ class _CustomSnackbarState extends State<CustomSnackbar>
 
   @override
   Widget build(BuildContext context) {
+    // 3. Access the variable using widget.type
+    Color bgColor;
+    switch (widget.type) {
+      case 'warning': bgColor = Colors.orange; break;
+      case 'error': bgColor = Colors.red; break;
+      case 'success': bgColor = Colors.green; break;
+      default: bgColor = Colors.blue;
+    }
+
     return SlideTransition(
       position: _slideAnimation,
       child: FadeTransition(
@@ -66,23 +79,22 @@ class _CustomSnackbarState extends State<CustomSnackbar>
             child: Material(
               elevation: 10,
               borderRadius: BorderRadius.circular(12),
-              color: Colors.deepPurple,
+              color: bgColor, // Use the variable defined above
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
                   vertical: 14,
-                ),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(Icons.info_outline, color: Colors.white),
                     const SizedBox(width: 10),
-                    Text(
-                      widget.message,
-                      style: const TextStyle(color: Colors.white),
+                    Flexible(
+                      child: Text(
+                        widget.message,
+                        style: const TextStyle(color: Colors.white),
+                      ),
                     ),
                   ],
                 ),

@@ -23,17 +23,21 @@ class CustomSearchableDropdown<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     return DropdownSearch<T>(
       enabled: enabled,
-      items: (filter, loadProps) => items,
+      items: (String filter, loadProps) {
+        if (filter.isEmpty) return items;
+        return items.where((item) =>
+            itemLabelBuilder(item).toLowerCase().contains(filter.toLowerCase())
+        ).toList();
+      },
       selectedItem: selectedItem,
-      // Logic for how to display the item in the list
       itemAsString: itemLabelBuilder,
-      // Logic for the search filter
       compareFn: (item, selectedItem) => item == selectedItem,
       onChanged: onSelected,
 
-      // Styling the search box and dropdown
       popupProps: PopupProps.menu(
         showSearchBox: true,
+        // OPTIONAL: Add a small delay to prevent rapid-fire rebuilding
+        searchDelay: const Duration(milliseconds: 200),
         searchFieldProps: TextFieldProps(
           decoration: InputDecoration(
             border: const OutlineInputBorder(),
@@ -41,7 +45,6 @@ class CustomSearchableDropdown<T> extends StatelessWidget {
             prefixIcon: const Icon(Icons.search),
           ),
         ),
-        // This ensures the dropdown doesn't take infinite height
         constraints: const BoxConstraints(maxHeight: 300),
       ),
 
